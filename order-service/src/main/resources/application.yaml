@@ -1,0 +1,27 @@
+server:
+  port: 8085
+
+spring:
+  application:
+    name: order-service
+  config:
+    import: optional:file:.env[.properties]
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ecommerce_db?currentSchema=order_schema
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        default_schema: order_schema
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+    show-sql: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
