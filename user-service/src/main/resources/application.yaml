@@ -4,19 +4,22 @@ server:
 spring:
   application:
     name: user-service
+
   config:
     import: optional:file:.env[.properties]
+
   datasource:
-    url: jdbc:postgresql://localhost:5432/ecommerce_db?currentSchema=user_schema
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:project}?currentSchema=${DB_SCHEMA:user_schema}
     username: ${DB_USERNAME}
     password: ${DB_PASSWORD}
     driver-class-name: org.postgresql.Driver
+
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     properties:
       hibernate:
-        default_schema: user_schema
+        default_schema: ${DB_SCHEMA:user_schema}
         dialect: org.hibernate.dialect.PostgreSQLDialect
     show-sql: true
 
@@ -25,3 +28,8 @@ management:
     web:
       exposure:
         include: health,info
+
+app:
+  jwt:
+    secret: ${JWT_SECRET}
+    expiration-ms: ${JWT_EXPIRATION_MS:86400000}
