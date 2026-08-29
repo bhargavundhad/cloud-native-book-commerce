@@ -10,6 +10,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import com.bookecommerce.user_service.exception.DuplicateEmailException;
+import com.bookecommerce.user_service.exception.DuplicatePhoneException;
 
 @Service
 @RequiredArgsConstructor
@@ -27,7 +29,7 @@ public class RegistrationService {
                 .toLowerCase();
 
         if (userRepository.existsByEmail(email)) {
-            throw new IllegalArgumentException(
+            throw new DuplicateEmailException(
                     "Email is already registered"
             );
         }
@@ -37,15 +39,15 @@ public class RegistrationService {
                 && userRepository.existsByPhoneNumber(
                 request.getPhoneNumber().trim()
         )) {
-            throw new IllegalArgumentException(
+            throw new DuplicatePhoneException(
                     "Phone number is already registered"
             );
         }
 
-        Role userRole = roleRepository.findByName("USER")
+        Role userRole = roleRepository.findByName("CUSTOMER")
                 .orElseThrow(() ->
                         new IllegalStateException(
-                                "USER role does not exist in database"
+                                "CUSTOMER role does not exist in database"
                         )
                 );
 

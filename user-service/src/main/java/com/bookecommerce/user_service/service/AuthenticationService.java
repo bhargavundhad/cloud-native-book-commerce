@@ -57,9 +57,8 @@ public class AuthenticationService {
         );
 
         return LoginResponse.builder()
-                .token(token)
+                .accessToken(token)
                 .tokenType("Bearer")
-                .expiresIn(86400000L)
                 .userId(user.getId())
                 .email(user.getEmail())
                 .firstName(user.getFirstName())

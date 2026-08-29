@@ -4,6 +4,7 @@ import com.bookecommerce.user_service.dto.auth.LoginRequest;
 import com.bookecommerce.user_service.dto.auth.LoginResponse;
 import com.bookecommerce.user_service.dto.auth.RegisterRequest;
 import com.bookecommerce.user_service.dto.auth.RegisterResponse;
+import com.bookecommerce.user_service.dto.common.ApiResponse;
 import com.bookecommerce.user_service.service.AuthenticationService;
 import com.bookecommerce.user_service.service.RegistrationService;
 import jakarta.validation.Valid;
@@ -21,24 +22,40 @@ public class AuthController {
     private final RegistrationService registrationService;
 
     @PostMapping("/register")
-    public ResponseEntity<RegisterResponse> register(
+    public ResponseEntity<ApiResponse<RegisterResponse>> register(
             @Valid @RequestBody RegisterRequest request
     ) {
+
         RegisterResponse response =
                 registrationService.register(request);
 
+        ApiResponse<RegisterResponse> apiResponse =
+                ApiResponse.<RegisterResponse>builder()
+                        .success(true)
+                        .message("User registered successfully")
+                        .data(response)
+                        .build();
+
         return ResponseEntity
                 .status(HttpStatus.CREATED)
-                .body(response);
+                .body(apiResponse);
     }
 
     @PostMapping("/login")
-    public ResponseEntity<LoginResponse> login(
+    public ResponseEntity<ApiResponse<LoginResponse>> login(
             @Valid @RequestBody LoginRequest request
     ) {
+
         LoginResponse response =
                 authenticationService.login(request);
 
-        return ResponseEntity.ok(response);
+        ApiResponse<LoginResponse> apiResponse =
+                ApiResponse.<LoginResponse>builder()
+                        .success(true)
+                        .message("Login successful")
+                        .data(response)
+                        .build();
+
+        return ResponseEntity.ok(apiResponse);
     }
 }
