@@ -1,47 +1,50 @@
+server:
+  port: 8080
+
 spring:
   application:
     name: api-gateway
+
   cloud:
     gateway:
-      routes:
-        - id: user-service
-          uri: http://localhost:8081
-          predicates:
-            - Path=/api/auth/**, /api/users/**
+      server:
+        webmvc:
+          routes:
 
-        - id: product-service
-          uri: http://localhost:8082
-          predicates:
-            - Path=/api/products/**, /api/books/**
+            - id: user-service
+              uri: http://localhost:8081
+              predicates:
+                - Path=/api/auth/**,/api/users/**
 
-        - id: inventory-service
-          uri: http://localhost:8083
-          predicates:
-            - Path=/api/inventory/**
+            - id: product-service
+              uri: http://localhost:8082
+              predicates:
+                - Path=/api/products/**,/api/books/**
 
-        - id: cart-service
-          uri: http://localhost:8084
-          predicates:
-            - Path=/api/cart/**
+            - id: inventory-service
+              uri: http://localhost:8083
+              predicates:
+                - Path=/api/inventory/**
 
-        - id: order-service
-          uri: http://localhost:8085
-          predicates:
-            - Path=/api/orders/**
+            - id: cart-service
+              uri: http://localhost:8084
+              predicates:
+                - Path=/api/cart/**
 
-        - id: payment-service
-          uri: http://localhost:8086
-          predicates:
-            - Path=/api/payments/**
+            - id: order-service
+              uri: http://localhost:8085
+              predicates:
+                - Path=/api/orders/**
 
-        - id: notification-service
-          uri: http://localhost:8087
-          predicates:
-            - Path=/api/notifications/**
+            - id: payment-service
+              uri: http://localhost:8086
+              predicates:
+                - Path=/api/payments/**
 
-
-server:
-  port: 8080
+            - id: notification-service
+              uri: http://localhost:8087
+              predicates:
+                - Path=/api/notifications/**
 
 management:
   endpoints:
