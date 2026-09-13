@@ -66,8 +66,18 @@ public class InventoryController {
         return inventoryService.releaseReservation(productId, quantity);
     }
 
+    @PostMapping("/release/{reservationId}")
+    public InventoryResponse releaseReservationById(@PathVariable UUID reservationId) {
+        return inventoryService.releaseReservation(reservationId);
+    }
+
     @PostMapping("/confirm")
     public InventoryResponse confirmReservation(@RequestParam UUID productId, @RequestParam Integer quantity) {
         return inventoryService.confirmReservation(productId, quantity);
+    }
+
+    @PostMapping("/confirm/{reservationId}")
+    public InventoryResponse confirmReservationById(@PathVariable UUID reservationId) {
+        return inventoryService.confirmReservation(reservationId);
     }
 }

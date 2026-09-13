@@ -113,6 +113,11 @@ public class UserService {
     // ==========================================
 
     @Transactional(readOnly = true)
+    public boolean userExists(UUID userId) {
+        return userRepository.existsById(userId);
+    }
+
+    @Transactional(readOnly = true)
     public UserResponse getUserById(UUID userId) {
 
         User user = userRepository.findById(userId)

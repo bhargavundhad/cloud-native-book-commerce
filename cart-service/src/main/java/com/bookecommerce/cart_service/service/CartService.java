@@ -16,19 +16,36 @@ import com.bookecommerce.cart_service.entity.CartItem;
 import com.bookecommerce.cart_service.entity.CartStatus;
 import com.bookecommerce.cart_service.exception.CartItemNotFoundException;
 import com.bookecommerce.cart_service.exception.CartNotFoundException;
+import com.bookecommerce.cart_service.integration.inventory.InventoryInsufficientStockException;
+import com.bookecommerce.cart_service.integration.inventory.InventoryServiceClient;
+import com.bookecommerce.cart_service.integration.inventory.InventoryServiceIntegrationException;
+import com.bookecommerce.cart_service.integration.inventory.InventoryServiceNotFoundException;
+import com.bookecommerce.cart_service.integration.inventory.InventoryServiceResponse;
+import com.bookecommerce.cart_service.integration.product.ProductServiceClient;
+import com.bookecommerce.cart_service.integration.user.UserServiceClient;
+import com.bookecommerce.cart_service.integration.user.UserServiceIntegrationException;
+import com.bookecommerce.cart_service.integration.user.UserServiceNotFoundException;
 import com.bookecommerce.cart_service.repository.CartRepository;
 
 @Service
 public class CartService {
 
     private final CartRepository cartRepository;
+    private final ProductServiceClient productServiceClient;
+    private final UserServiceClient userServiceClient;
+    private final InventoryServiceClient inventoryServiceClient;
 
-    public CartService(CartRepository cartRepository) {
+    public CartService(CartRepository cartRepository, ProductServiceClient productServiceClient,
+            UserServiceClient userServiceClient, InventoryServiceClient inventoryServiceClient) {
         this.cartRepository = cartRepository;
+        this.productServiceClient = productServiceClient;
+        this.userServiceClient = userServiceClient;
+        this.inventoryServiceClient = inventoryServiceClient;
     }
 
     @Transactional
     public CartResponse getOrCreateActiveCart(UUID userId) {
+        ensureUserExists(userId);
         Cart cart = cartRepository.findByUserIdAndStatus(userId, CartStatus.ACTIVE)
                 .orElseGet(() -> createActiveCart(userId));
         return toResponse(cart);
@@ -36,28 +53,55 @@ public class CartService {
 
     @Transactional(readOnly = true)
     public CartResponse getActiveCart(UUID userId) {
+        ensureUserExists(userId);
         return toResponse(findActiveCart(userId));
     }
 
     @Transactional
     public CartResponse addItem(UUID userId, AddCartItemRequest request) {
         validateAddItemRequest(request);
-        Cart cart = cartRepository.findByUserIdAndStatus(userId, CartStatus.ACTIVE)
-                .orElseGet(() -> createActiveCart(userId));
+        ensureUserExists(userId);
+
+        var product = productServiceClient.getBookById(request.productId());
+        int requestedQuantity = request.quantity();
+        int availableStock = getAvailableStock(request.productId());
+
+        Cart cart = cartRepository.findByUserIdAndStatus(userId, CartStatus.ACTIVE).orElse(null);
+        if (cart == null) {
+            validateAvailableStock(request.productId(), requestedQuantity, availableStock);
+            cart = createActiveCart(userId);
+        } else {
+            CartItem item = cart.getItems().stream()
+                    .filter(existingItem -> existingItem.getProductId().equals(request.productId()))
+                    .findFirst()
+                    .orElse(null);
+            int finalQuantity = item == null ? requestedQuantity : item.getQuantity() + requestedQuantity;
+            validateAvailableStock(request.productId(), finalQuantity, availableStock);
+            if (item == null) {
+                item = new CartItem();
+                item.setProductId(request.productId());
+                item.setQuantity(0);
+                item.setUnitPrice(product.price());
+                cart.addItem(item);
+            }
+            item.setQuantity(finalQuantity);
+            item.setUnitPrice(product.price());
+            return toResponse(cartRepository.save(cart));
+        }
 
         CartItem item = cart.getItems().stream()
                 .filter(existingItem -> existingItem.getProductId().equals(request.productId()))
                 .findFirst()
-                .orElseGet(() -> {
-                    CartItem newItem = new CartItem();
-                    newItem.setProductId(request.productId());
-                    newItem.setQuantity(0);
-                    newItem.setUnitPrice(request.unitPrice());
-                    cart.addItem(newItem);
-                    return newItem;
-                });
-        item.setQuantity(item.getQuantity() + request.quantity());
-        item.setUnitPrice(request.unitPrice());
+                .orElse(null);
+        if (item == null) {
+            item = new CartItem();
+            item.setProductId(request.productId());
+            item.setQuantity(0);
+            item.setUnitPrice(product.price());
+            cart.addItem(item);
+        }
+        item.setQuantity(requestedQuantity);
+        item.setUnitPrice(product.price());
 
         return toResponse(cartRepository.save(cart));
     }
@@ -66,14 +110,18 @@ public class CartService {
     public CartResponse updateItemQuantity(UUID userId, UUID productId,
             UpdateCartItemQuantityRequest request) {
         validateQuantity(request.quantity());
+        ensureUserExists(userId);
         Cart cart = findActiveCart(userId);
         CartItem item = findItem(cart, productId);
+        int availableStock = getAvailableStock(productId);
+        validateAvailableStock(productId, request.quantity(), availableStock);
         item.setQuantity(request.quantity());
         return toResponse(cartRepository.save(cart));
     }
 
     @Transactional
     public CartResponse removeItem(UUID userId, UUID productId) {
+        ensureUserExists(userId);
         Cart cart = findActiveCart(userId);
         CartItem item = findItem(cart, productId);
         cart.removeItem(item);
@@ -82,6 +130,7 @@ public class CartService {
 
     @Transactional
     public CartResponse clearCart(UUID userId) {
+        ensureUserExists(userId);
         Cart cart = findActiveCart(userId);
         cart.getItems().clear();
         return toResponse(cartRepository.save(cart));
@@ -89,6 +138,7 @@ public class CartService {
 
     @Transactional(readOnly = true)
     public BigDecimal calculateTotal(UUID userId) {
+        ensureUserExists(userId);
         return calculateTotal(findActiveCart(userId));
     }
 
@@ -97,6 +147,16 @@ public class CartService {
         cart.setUserId(userId);
         cart.setStatus(CartStatus.ACTIVE);
         return cartRepository.save(cart);
+    }
+
+    private void ensureUserExists(UUID userId) {
+        if (userId == null) {
+            throw new IllegalArgumentException("User ID is required");
+        }
+
+        if (!userServiceClient.userExists(userId)) {
+            throw new UserServiceNotFoundException("User not found for cart operation: " + userId, "USER_NOT_FOUND");
+        }
     }
 
     private void validateAddItemRequest(AddCartItemRequest request) {
@@ -125,6 +185,19 @@ public class CartService {
                 .filter(item -> item.getProductId().equals(productId))
                 .findFirst()
                 .orElseThrow(() -> new CartItemNotFoundException("Cart item not found for product: " + productId));
+    }
+
+    private int getAvailableStock(UUID productId) {
+        InventoryServiceResponse inventory = inventoryServiceClient.getInventoryByProductId(productId);
+        return inventory.quantity() - inventory.reservedQuantity();
+    }
+
+    private void validateAvailableStock(UUID productId, int requestedFinalQuantity, int availableStock) {
+        if (requestedFinalQuantity > availableStock) {
+            throw new InventoryInsufficientStockException(
+                    "Insufficient stock available for product: " + productId,
+                    "INSUFFICIENT_STOCK");
+        }
     }
 
     private CartResponse toResponse(Cart cart) {

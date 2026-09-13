@@ -2,6 +2,7 @@ package com.bookecommerce.user_service.config;
 
 import com.bookecommerce.user_service.security.CustomAccessDeniedHandler;
 import com.bookecommerce.user_service.security.CustomAuthenticationEntryPoint;
+import com.bookecommerce.user_service.security.InternalServiceAuthenticationFilter;
 import com.bookecommerce.user_service.security.JwtAuthenticationFilter;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -20,6 +21,8 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+
+    private final InternalServiceAuthenticationFilter internalServiceAuthenticationFilter;
 
     private final CustomAuthenticationEntryPoint
             customAuthenticationEntryPoint;
@@ -71,6 +74,10 @@ public class SecurityConfig {
                 .addFilterBefore(
                         jwtAuthenticationFilter,
                         UsernamePasswordAuthenticationFilter.class
+                )
+                .addFilterBefore(
+                        internalServiceAuthenticationFilter,
+                        JwtAuthenticationFilter.class
                 );
 
         return http.build();

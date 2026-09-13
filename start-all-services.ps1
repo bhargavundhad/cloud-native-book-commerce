@@ -1,4 +1,4 @@
-$BASE_PATH = "D:\cloud-native-book-commerce"
+$BASE_PATH = "F:\cloud-native-book-commerce"
 
 $services = @(
     "user-service",

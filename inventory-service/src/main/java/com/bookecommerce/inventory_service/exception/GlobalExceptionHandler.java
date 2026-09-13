@@ -35,6 +35,12 @@ public class GlobalExceptionHandler {
                 .body(new ApiError(false, exception.getMessage(), exception.getErrorCode()));
     }
 
+    @ExceptionHandler(ProductServiceUnavailableException.class)
+    public ResponseEntity<ApiError> handleProductServiceUnavailable(ProductServiceUnavailableException exception) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .body(new ApiError(false, exception.getMessage(), exception.getErrorCode()));
+    }
+
     @ExceptionHandler(MethodArgumentNotValidException.class)
     public ResponseEntity<Object> handleValidation(MethodArgumentNotValidException exception) {
         Map<String, String> errors = new LinkedHashMap<>();
