@@ -99,6 +99,220 @@ class OrderControllerTest {
     }
 
     @Test
+    @DisplayName("POST /api/orders should return HTTP 404 NOT FOUND when user does not exist")
+    void testCreateOrderEndpointUserNotFound() throws Exception {
+        UUID productId = UUID.randomUUID();
+        String jsonPayload = """
+                {
+                    "userId": "%s",
+                    "items": [
+                        {
+                            "productId": "%s",
+                            "quantity": 2,
+                            "unitPrice": 200.00
+                        }
+                    ],
+                    "shippingAddress": "123 Tech Park"
+                }
+                """.formatted(userId, productId);
+
+        when(orderService.createOrder(any(CreateOrderRequest.class)))
+                .thenThrow(new com.bookecommerce.order_service.exception.UserNotFoundException(userId));
+
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("USER_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("POST /api/orders should return HTTP 503 SERVICE UNAVAILABLE when User Service is down")
+    void testCreateOrderEndpointUserServiceUnavailable() throws Exception {
+        UUID productId = UUID.randomUUID();
+        String jsonPayload = """
+                {
+                    "userId": "%s",
+                    "items": [
+                        {
+                            "productId": "%s",
+                            "quantity": 2,
+                            "unitPrice": 200.00
+                        }
+                    ],
+                    "shippingAddress": "123 Tech Park"
+                }
+                """.formatted(userId, productId);
+
+        when(orderService.createOrder(any(CreateOrderRequest.class)))
+                .thenThrow(new com.bookecommerce.order_service.exception.UserServiceUnavailableException("User service down"));
+
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("USER_SERVICE_UNAVAILABLE"));
+    }
+
+    @Test
+    @DisplayName("POST /api/orders should return HTTP 401 UNAUTHORIZED when authentication token is missing/invalid")
+    void testCreateOrderEndpointUserUnauthorized() throws Exception {
+        UUID productId = UUID.randomUUID();
+        String jsonPayload = """
+                {
+                    "userId": "%s",
+                    "items": [
+                        {
+                            "productId": "%s",
+                            "quantity": 2,
+                            "unitPrice": 200.00
+                        }
+                    ],
+                    "shippingAddress": "123 Tech Park"
+                }
+                """.formatted(userId, productId);
+
+        when(orderService.createOrder(any(CreateOrderRequest.class)))
+                .thenThrow(new com.bookecommerce.order_service.exception.UserUnauthorizedException("Authentication required"));
+
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("UNAUTHORIZED"));
+    }
+
+    @Test
+    @DisplayName("POST /api/orders should return HTTP 404 NOT_FOUND when active cart is not found")
+    void testCreateOrderEndpointCartNotFound() throws Exception {
+        String jsonPayload = """
+                {
+                    "userId": "%s",
+                    "shippingAddress": "123 Tech Park"
+                }
+                """.formatted(userId);
+
+        when(orderService.createOrder(any(CreateOrderRequest.class)))
+                .thenThrow(new com.bookecommerce.order_service.exception.CartNotFoundException(userId));
+
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("CART_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("POST /api/orders should return HTTP 400 BAD_REQUEST when cart is empty")
+    void testCreateOrderEndpointCartEmpty() throws Exception {
+        String jsonPayload = """
+                {
+                    "userId": "%s",
+                    "shippingAddress": "123 Tech Park"
+                }
+                """.formatted(userId);
+
+        when(orderService.createOrder(any(CreateOrderRequest.class)))
+                .thenThrow(new com.bookecommerce.order_service.exception.CartEmptyException("Cannot create order from an empty cart"));
+
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("CART_EMPTY"));
+    }
+
+    @Test
+    @DisplayName("POST /api/orders should return HTTP 400 BAD_REQUEST when cart is not active")
+    void testCreateOrderEndpointCartNotActive() throws Exception {
+        String jsonPayload = """
+                {
+                    "userId": "%s",
+                    "shippingAddress": "123 Tech Park"
+                }
+                """.formatted(userId);
+
+        when(orderService.createOrder(any(CreateOrderRequest.class)))
+                .thenThrow(new com.bookecommerce.order_service.exception.CartNotActiveException("Cart is not active"));
+
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("CART_NOT_ACTIVE"));
+    }
+
+    @Test
+    @DisplayName("POST /api/orders should return HTTP 503 SERVICE_UNAVAILABLE when Cart Service is down")
+    void testCreateOrderEndpointCartServiceUnavailable() throws Exception {
+        String jsonPayload = """
+                {
+                    "userId": "%s",
+                    "shippingAddress": "123 Tech Park"
+                }
+                """.formatted(userId);
+
+        when(orderService.createOrder(any(CreateOrderRequest.class)))
+                .thenThrow(new com.bookecommerce.order_service.exception.CartServiceUnavailableException("Cart Service down"));
+
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("CART_SERVICE_UNAVAILABLE"));
+    }
+
+    @Test
+    @DisplayName("POST /api/orders should return HTTP 404 NOT_FOUND when cart product is not found in Product Service")
+    void testCreateOrderEndpointProductNotFound() throws Exception {
+        UUID productId = UUID.randomUUID();
+        String jsonPayload = """
+                {
+                    "userId": "%s",
+                    "shippingAddress": "123 Tech Park"
+                }
+                """.formatted(userId);
+
+        when(orderService.createOrder(any(CreateOrderRequest.class)))
+                .thenThrow(new com.bookecommerce.order_service.exception.ProductNotFoundException(productId));
+
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isNotFound())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("PRODUCT_NOT_FOUND"));
+    }
+
+    @Test
+    @DisplayName("POST /api/orders should return HTTP 503 SERVICE_UNAVAILABLE when Product Service is down")
+    void testCreateOrderEndpointProductServiceUnavailable() throws Exception {
+        String jsonPayload = """
+                {
+                    "userId": "%s",
+                    "shippingAddress": "123 Tech Park"
+                }
+                """.formatted(userId);
+
+        when(orderService.createOrder(any(CreateOrderRequest.class)))
+                .thenThrow(new com.bookecommerce.order_service.exception.ProductServiceUnavailableException("Product Service down"));
+
+        mockMvc.perform(post("/api/orders")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(jsonPayload))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.errorCode").value("PRODUCT_SERVICE_UNAVAILABLE"));
+    }
+
+    @Test
     @DisplayName("GET /api/orders should return all orders (admin)")
     void testGetAllOrdersEndpoint() throws Exception {
         OrderResponse mockResponse = new OrderResponse(

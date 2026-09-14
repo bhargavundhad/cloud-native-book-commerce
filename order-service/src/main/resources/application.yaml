@@ -24,4 +24,16 @@ management:
   endpoints:
     web:
       exposure:
-        include: health,info
+        include: health,info
+
+services:
+  user-service:
+    url: ${USER_SERVICE_URL:http://localhost:8081}
+  cart-service:
+    url: ${CART_SERVICE_URL:http://localhost:8084}
+  product-service:
+    url: ${PRODUCT_SERVICE_URL:http://localhost:8082}
+
+app:
+  jwt:
+    secret: ${JWT_SECRET:book-ecommerce-user-service-jwt-secret-key-2026}

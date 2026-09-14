@@ -1,5 +1,10 @@
 package com.bookecommerce.order_service.service;
 
+import com.bookecommerce.order_service.client.CartServiceClient;
+import com.bookecommerce.order_service.client.ProductServiceClient;
+import com.bookecommerce.order_service.client.UserServiceClient;
+import com.bookecommerce.order_service.client.dto.CartItemResponseDto;
+import com.bookecommerce.order_service.client.dto.CartResponseDto;
 import com.bookecommerce.order_service.dto.request.CreateOrderItemRequest;
 import com.bookecommerce.order_service.dto.request.CreateOrderRequest;
 import com.bookecommerce.order_service.dto.response.OrderItemResponse;
@@ -8,10 +13,19 @@ import com.bookecommerce.order_service.entity.Order;
 import com.bookecommerce.order_service.entity.OrderItem;
 import com.bookecommerce.order_service.entity.OrderStatus;
 import com.bookecommerce.order_service.entity.ShippingAddress;
+import com.bookecommerce.order_service.exception.CartEmptyException;
+import com.bookecommerce.order_service.exception.CartNotActiveException;
+import com.bookecommerce.order_service.exception.CartNotFoundException;
 import com.bookecommerce.order_service.exception.OrderNotFoundException;
+import com.bookecommerce.order_service.exception.UserForbiddenException;
 import com.bookecommerce.order_service.repository.OrderRepository;
+import com.bookecommerce.order_service.security.JwtTokenValidator;
+import jakarta.servlet.http.HttpServletRequest;
+import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.context.request.RequestContextHolder;
+import org.springframework.web.context.request.ServletRequestAttributes;
 
 import java.math.BigDecimal;
 import java.util.List;
@@ -23,9 +37,21 @@ import java.util.stream.Collectors;
 public class OrderService {
 
     private final OrderRepository orderRepository;
+    private final UserServiceClient userServiceClient;
+    private final CartServiceClient cartServiceClient;
+    private final ProductServiceClient productServiceClient;
+    private final JwtTokenValidator jwtTokenValidator;
 
-    public OrderService(OrderRepository orderRepository) {
+    public OrderService(OrderRepository orderRepository,
+                        UserServiceClient userServiceClient,
+                        CartServiceClient cartServiceClient,
+                        ProductServiceClient productServiceClient,
+                        JwtTokenValidator jwtTokenValidator) {
         this.orderRepository = orderRepository;
+        this.userServiceClient = userServiceClient;
+        this.cartServiceClient = cartServiceClient;
+        this.productServiceClient = productServiceClient;
+        this.jwtTokenValidator = jwtTokenValidator;
     }
 
     public OrderResponse createOrder(CreateOrderRequest request) {
@@ -35,8 +61,47 @@ public class OrderService {
         if (request.userId() == null) {
             throw new IllegalArgumentException("userId is required");
         }
-        if (request.items() == null || request.items().isEmpty()) {
-            throw new IllegalArgumentException("items list cannot be empty");
+
+        String authHeader = getIncomingAuthorizationHeader();
+
+        // Validate JWT identity matching if Authorization header is provided
+        if (authHeader != null && authHeader.startsWith("Bearer ")) {
+            UUID authenticatedUserId = jwtTokenValidator.extractUserIdFromHeader(authHeader);
+            String role = jwtTokenValidator.extractRoleFromHeader(authHeader);
+
+            if (!request.userId().equals(authenticatedUserId) && !"ADMIN".equalsIgnoreCase(role)) {
+                throw new UserForbiddenException("User is not authorized to create an order on behalf of another user");
+            }
+        }
+
+        // Verify user existence synchronously via User Service
+        userServiceClient.verifyUserExists(request.userId(), authHeader);
+
+        // Fetch user's active cart from Cart Service
+        CartResponseDto cart = cartServiceClient.getActiveCart(request.userId(), authHeader);
+        if (cart == null) {
+            throw new CartNotFoundException(request.userId());
+        }
+
+        if (cart.status() == null || !"ACTIVE".equalsIgnoreCase(cart.status())) {
+            throw new CartNotActiveException("Cart is not active for user: " + request.userId());
+        }
+
+        List<CartItemResponseDto> cartItems = cart.items();
+        if (cartItems == null || cartItems.isEmpty()) {
+            throw new CartEmptyException("Cannot create order from an empty cart");
+        }
+
+        // Validate every cart item's product against Product Service
+        for (CartItemResponseDto item : cartItems) {
+            if (item.productId() == null) {
+                throw new IllegalArgumentException("productId is required for all cart items");
+            }
+            if (item.quantity() == null || item.quantity() < 1) {
+                throw new IllegalArgumentException("quantity must be at least 1");
+            }
+            // Product Service synchronous validation
+            productServiceClient.getProduct(item.productId(), authHeader);
         }
 
         Order order = Order.builder()
@@ -46,19 +111,12 @@ public class OrderService {
                 .currency("INR")
                 .build();
 
-        for (CreateOrderItemRequest itemReq : request.items()) {
-            if (itemReq.productId() == null) {
-                throw new IllegalArgumentException("productId is required for all items");
-            }
-            if (itemReq.quantity() == null || itemReq.quantity() < 1) {
-                throw new IllegalArgumentException("quantity must be at least 1");
-            }
-
-            BigDecimal unitPrice = (itemReq.unitPrice() != null) ? itemReq.unitPrice() : BigDecimal.ZERO;
+        for (CartItemResponseDto item : cartItems) {
+            BigDecimal unitPrice = (item.unitPrice() != null) ? item.unitPrice() : BigDecimal.ZERO;
 
             OrderItem orderItem = OrderItem.builder()
-                    .productId(itemReq.productId())
-                    .quantity(itemReq.quantity())
+                    .productId(item.productId())
+                    .quantity(item.quantity())
                     .unitPrice(unitPrice)
                     .build();
 
@@ -153,5 +211,17 @@ public class OrderService {
                 order.getCreatedAt(),
                 order.getUpdatedAt()
         );
+    }
+
+    private String getIncomingAuthorizationHeader() {
+        try {
+            ServletRequestAttributes attributes = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
+            if (attributes != null && attributes.getRequest() != null) {
+                HttpServletRequest request = attributes.getRequest();
+                return request.getHeader(HttpHeaders.AUTHORIZATION);
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 }
