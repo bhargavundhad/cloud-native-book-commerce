@@ -1,10 +1,12 @@
 package com.bookecommerce.order_service.service;
 
 import com.bookecommerce.order_service.client.CartServiceClient;
+import com.bookecommerce.order_service.client.InventoryServiceClient;
 import com.bookecommerce.order_service.client.ProductServiceClient;
 import com.bookecommerce.order_service.client.UserServiceClient;
 import com.bookecommerce.order_service.client.dto.CartItemResponseDto;
 import com.bookecommerce.order_service.client.dto.CartResponseDto;
+import com.bookecommerce.order_service.client.dto.InventoryResponseDto;
 import com.bookecommerce.order_service.client.dto.ProductResponseDto;
 import com.bookecommerce.order_service.client.dto.UserResponseDto;
 import com.bookecommerce.order_service.dto.request.CreateOrderRequest;
@@ -15,6 +17,9 @@ import com.bookecommerce.order_service.exception.CartEmptyException;
 import com.bookecommerce.order_service.exception.CartNotActiveException;
 import com.bookecommerce.order_service.exception.CartNotFoundException;
 import com.bookecommerce.order_service.exception.CartServiceUnavailableException;
+import com.bookecommerce.order_service.exception.InsufficientStockException;
+import com.bookecommerce.order_service.exception.InventoryNotFoundException;
+import com.bookecommerce.order_service.exception.InventoryServiceUnavailableException;
 import com.bookecommerce.order_service.exception.OrderNotFoundException;
 import com.bookecommerce.order_service.exception.ProductNotFoundException;
 import com.bookecommerce.order_service.exception.ProductServiceUnavailableException;
@@ -32,6 +37,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -57,6 +63,9 @@ class OrderServiceTest {
     private ProductServiceClient productServiceClient;
 
     @Mock
+    private InventoryServiceClient inventoryServiceClient;
+
+    @Mock
     private JwtTokenValidator jwtTokenValidator;
 
     @InjectMocks
@@ -74,7 +83,7 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("Should create order successfully using active cart after validating single product with Product Service")
+    @DisplayName("Should create order successfully using active cart after validating single product with Product Service and reserving inventory")
     void testCreateOrderSuccessSingleProductValidated() {
         CreateOrderRequest request = new CreateOrderRequest(
                 userId,
@@ -91,6 +100,9 @@ class OrderServiceTest {
 
         ProductResponseDto validProduct = new ProductResponseDto(productId1, "9781234567890", "Clean Code", "Tech book", UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("499.00"));
         when(productServiceClient.getProduct(eq(productId1), any())).thenReturn(validProduct);
+
+        InventoryResponseDto validReservation = new InventoryResponseDto(UUID.randomUUID(), productId1, 100, 2, "AVAILABLE", LocalDateTime.now(), UUID.randomUUID(), null, 2, "ACTIVE", LocalDateTime.now(), LocalDateTime.now());
+        when(inventoryServiceClient.reserveStock(eq(productId1), eq(2), any())).thenReturn(validReservation);
 
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
             Order saved = invocation.getArgument(0);
@@ -113,11 +125,12 @@ class OrderServiceTest {
 
         verify(cartServiceClient, times(1)).getActiveCart(eq(userId), any());
         verify(productServiceClient, times(1)).getProduct(eq(productId1), any());
+        verify(inventoryServiceClient, times(1)).reserveStock(eq(productId1), eq(2), any());
         verify(orderRepository, times(1)).save(any(Order.class));
     }
 
     @Test
-    @DisplayName("Should create order successfully using active cart after validating multiple products with Product Service")
+    @DisplayName("Should create order successfully using active cart after validating multiple products with Product Service and reserving inventory")
     void testCreateOrderSuccessMultipleProductsValidated() {
         CreateOrderRequest request = new CreateOrderRequest(
                 userId,
@@ -138,6 +151,11 @@ class OrderServiceTest {
         when(productServiceClient.getProduct(eq(productId1), any())).thenReturn(product1);
         when(productServiceClient.getProduct(eq(productId2), any())).thenReturn(product2);
 
+        InventoryResponseDto res1 = new InventoryResponseDto(UUID.randomUUID(), productId1, 100, 2, "AVAILABLE", LocalDateTime.now(), UUID.randomUUID(), null, 2, "ACTIVE", LocalDateTime.now(), LocalDateTime.now());
+        InventoryResponseDto res2 = new InventoryResponseDto(UUID.randomUUID(), productId2, 50, 1, "AVAILABLE", LocalDateTime.now(), UUID.randomUUID(), null, 1, "ACTIVE", LocalDateTime.now(), LocalDateTime.now());
+        when(inventoryServiceClient.reserveStock(eq(productId1), eq(2), any())).thenReturn(res1);
+        when(inventoryServiceClient.reserveStock(eq(productId2), eq(1), any())).thenReturn(res2);
+
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
             Order saved = invocation.getArgument(0);
             saved.setId(UUID.randomUUID());
@@ -152,6 +170,8 @@ class OrderServiceTest {
 
         verify(productServiceClient, times(1)).getProduct(eq(productId1), any());
         verify(productServiceClient, times(1)).getProduct(eq(productId2), any());
+        verify(inventoryServiceClient, times(1)).reserveStock(eq(productId1), eq(2), any());
+        verify(inventoryServiceClient, times(1)).reserveStock(eq(productId2), eq(1), any());
         verify(orderRepository, times(1)).save(any(Order.class));
     }
 
@@ -468,5 +488,99 @@ class OrderServiceTest {
         assertNotNull(response);
         assertEquals(OrderStatus.CONFIRMED, response.status());
         verify(orderRepository, times(1)).save(order);
+    }
+
+    @Test
+    @DisplayName("Should reject order creation and NOT persist when Inventory Service reports insufficient stock")
+    void testCreateOrderInsufficientStock() {
+        CreateOrderRequest request = new CreateOrderRequest(userId, null, "123 Tech Park");
+
+        UserResponseDto validUser = new UserResponseDto(userId, "John", "Doe", "john@example.com", "9876543210", "CUSTOMER", true);
+        when(userServiceClient.verifyUserExists(eq(userId), any())).thenReturn(validUser);
+
+        CartItemResponseDto item = new CartItemResponseDto(UUID.randomUUID(), productId1, 5, new BigDecimal("499.00"));
+        CartResponseDto activeCart = new CartResponseDto(UUID.randomUUID(), userId, "ACTIVE", List.of(item), new BigDecimal("2495.00"));
+        when(cartServiceClient.getActiveCart(eq(userId), any())).thenReturn(activeCart);
+
+        ProductResponseDto product = new ProductResponseDto(productId1, "9781234567890", "Clean Code", "Tech", UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("499.00"));
+        when(productServiceClient.getProduct(eq(productId1), any())).thenReturn(product);
+
+        doThrow(new InsufficientStockException(productId1)).when(inventoryServiceClient).reserveStock(eq(productId1), eq(5), any());
+
+        assertThrows(InsufficientStockException.class, () -> orderService.createOrder(request));
+        verify(orderRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Should reject order creation and NOT persist when Inventory Service returns inventory not found")
+    void testCreateOrderInventoryNotFound() {
+        CreateOrderRequest request = new CreateOrderRequest(userId, null, "123 Tech Park");
+
+        UserResponseDto validUser = new UserResponseDto(userId, "John", "Doe", "john@example.com", "9876543210", "CUSTOMER", true);
+        when(userServiceClient.verifyUserExists(eq(userId), any())).thenReturn(validUser);
+
+        CartItemResponseDto item = new CartItemResponseDto(UUID.randomUUID(), productId1, 1, new BigDecimal("499.00"));
+        CartResponseDto activeCart = new CartResponseDto(UUID.randomUUID(), userId, "ACTIVE", List.of(item), new BigDecimal("499.00"));
+        when(cartServiceClient.getActiveCart(eq(userId), any())).thenReturn(activeCart);
+
+        ProductResponseDto product = new ProductResponseDto(productId1, "9781234567890", "Clean Code", "Tech", UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("499.00"));
+        when(productServiceClient.getProduct(eq(productId1), any())).thenReturn(product);
+
+        doThrow(new InventoryNotFoundException(productId1)).when(inventoryServiceClient).reserveStock(eq(productId1), eq(1), any());
+
+        assertThrows(InventoryNotFoundException.class, () -> orderService.createOrder(request));
+        verify(orderRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Should reject order creation and NOT persist when Inventory Service is unavailable")
+    void testCreateOrderInventoryServiceUnavailable() {
+        CreateOrderRequest request = new CreateOrderRequest(userId, null, "123 Tech Park");
+
+        UserResponseDto validUser = new UserResponseDto(userId, "John", "Doe", "john@example.com", "9876543210", "CUSTOMER", true);
+        when(userServiceClient.verifyUserExists(eq(userId), any())).thenReturn(validUser);
+
+        CartItemResponseDto item = new CartItemResponseDto(UUID.randomUUID(), productId1, 1, new BigDecimal("499.00"));
+        CartResponseDto activeCart = new CartResponseDto(UUID.randomUUID(), userId, "ACTIVE", List.of(item), new BigDecimal("499.00"));
+        when(cartServiceClient.getActiveCart(eq(userId), any())).thenReturn(activeCart);
+
+        ProductResponseDto product = new ProductResponseDto(productId1, "9781234567890", "Clean Code", "Tech", UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("499.00"));
+        when(productServiceClient.getProduct(eq(productId1), any())).thenReturn(product);
+
+        doThrow(new InventoryServiceUnavailableException("Inventory Service is unreachable")).when(inventoryServiceClient).reserveStock(eq(productId1), eq(1), any());
+
+        assertThrows(InventoryServiceUnavailableException.class, () -> orderService.createOrder(request));
+        verify(orderRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Should attempt release for acquired reservations and NOT persist order when multi-item cart has partial inventory failure")
+    void testCreateOrderMultiItemPartialFailureRollback() {
+        CreateOrderRequest request = new CreateOrderRequest(userId, null, "123 Tech Park");
+
+        UserResponseDto validUser = new UserResponseDto(userId, "John", "Doe", "john@example.com", "9876543210", "CUSTOMER", true);
+        when(userServiceClient.verifyUserExists(eq(userId), any())).thenReturn(validUser);
+
+        CartItemResponseDto item1 = new CartItemResponseDto(UUID.randomUUID(), productId1, 2, new BigDecimal("499.00"));
+        CartItemResponseDto item2 = new CartItemResponseDto(UUID.randomUUID(), productId2, 5, new BigDecimal("799.00"));
+        CartResponseDto activeCart = new CartResponseDto(UUID.randomUUID(), userId, "ACTIVE", List.of(item1, item2), new BigDecimal("4993.00"));
+        when(cartServiceClient.getActiveCart(eq(userId), any())).thenReturn(activeCart);
+
+        ProductResponseDto product1 = new ProductResponseDto(productId1, "9781234567890", "Clean Code", "Tech", UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("499.00"));
+        ProductResponseDto product2 = new ProductResponseDto(productId2, "9780987654321", "Refactoring", "Tech", UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("799.00"));
+        when(productServiceClient.getProduct(eq(productId1), any())).thenReturn(product1);
+        when(productServiceClient.getProduct(eq(productId2), any())).thenReturn(product2);
+
+        UUID reservationId1 = UUID.randomUUID();
+        InventoryResponseDto res1 = new InventoryResponseDto(UUID.randomUUID(), productId1, 100, 2, "AVAILABLE", LocalDateTime.now(), reservationId1, null, 2, "ACTIVE", LocalDateTime.now(), LocalDateTime.now());
+        when(inventoryServiceClient.reserveStock(eq(productId1), eq(2), any())).thenReturn(res1);
+        doThrow(new InsufficientStockException(productId2)).when(inventoryServiceClient).reserveStock(eq(productId2), eq(5), any());
+
+        assertThrows(InsufficientStockException.class, () -> orderService.createOrder(request));
+
+        // Verify item 1's reservation release was called
+        verify(inventoryServiceClient, times(1)).releaseReservation(eq(reservationId1), any());
+        // Verify order was NEVER persisted
+        verify(orderRepository, never()).save(any());
     }
 }

@@ -154,6 +154,36 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 
+    @ExceptionHandler(InsufficientStockException.class)
+    public ResponseEntity<Map<String, Object>> handleInsufficientStock(InsufficientStockException ex) {
+        Map<String, Object> body = Map.of(
+                "success", false,
+                "message", ex.getMessage(),
+                "errorCode", "INSUFFICIENT_STOCK"
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(InventoryNotFoundException.class)
+    public ResponseEntity<Map<String, Object>> handleInventoryNotFound(InventoryNotFoundException ex) {
+        Map<String, Object> body = Map.of(
+                "success", false,
+                "message", ex.getMessage(),
+                "errorCode", "INVENTORY_NOT_FOUND"
+        );
+        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+    }
+
+    @ExceptionHandler(InventoryServiceUnavailableException.class)
+    public ResponseEntity<Map<String, Object>> handleInventoryServiceUnavailable(InventoryServiceUnavailableException ex) {
+        Map<String, Object> body = Map.of(
+                "success", false,
+                "message", ex.getMessage(),
+                "errorCode", "INVENTORY_SERVICE_UNAVAILABLE"
+        );
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
     @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
     public ResponseEntity<Map<String, Object>> handleBadRequest(RuntimeException ex) {
         Map<String, Object> body = Map.of(

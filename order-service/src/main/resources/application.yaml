@@ -33,6 +33,8 @@ services:
     url: ${CART_SERVICE_URL:http://localhost:8084}
   product-service:
     url: ${PRODUCT_SERVICE_URL:http://localhost:8082}
+  inventory-service:
+    url: ${INVENTORY_SERVICE_URL:http://localhost:8083}
 
 app:
   jwt:
