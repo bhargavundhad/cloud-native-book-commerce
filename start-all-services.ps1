@@ -1,4 +1,4 @@
-$BASE_PATH = "F:\cloud-native-book-commerce"
+$BASE_PATH = "E:\9th sem Project\cloud-native-book-commerce"
 
 
 $services = @(
