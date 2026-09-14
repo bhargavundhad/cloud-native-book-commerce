@@ -20,6 +20,15 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
     show-sql: true
 
+app:
+  service-urls:
+    user: http://localhost:8081
+    product: http://localhost:8082
+    inventory: http://localhost:8083
+    cart: http://localhost:8084
+    order: http://localhost:8085
+    payment: http://localhost:8086
+
 management:
   endpoints:
     web:

@@ -14,6 +14,14 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
+import com.bookecommerce.cart_service.integration.inventory.InventoryInsufficientStockException;
+import com.bookecommerce.cart_service.integration.inventory.InventoryServiceIntegrationException;
+import com.bookecommerce.cart_service.integration.inventory.InventoryServiceNotFoundException;
+import com.bookecommerce.cart_service.integration.product.ProductServiceIntegrationException;
+import com.bookecommerce.cart_service.integration.product.ProductServiceNotFoundException;
+import com.bookecommerce.cart_service.integration.user.UserServiceIntegrationException;
+import com.bookecommerce.cart_service.integration.user.UserServiceNotFoundException;
+
 @RestControllerAdvice
 public class GlobalExceptionHandler {
 
@@ -44,6 +52,41 @@ public class GlobalExceptionHandler {
                 ? "Invalid UUID: " + exception.getValue()
                 : "Invalid request parameter";
         return error(HttpStatus.BAD_REQUEST, message, errorCode);
+    }
+
+    @ExceptionHandler(ProductServiceNotFoundException.class)
+    public ResponseEntity<ApiError> handleProductNotFound(ProductServiceNotFoundException exception) {
+        return error(HttpStatus.NOT_FOUND, exception.getMessage(), exception.getErrorCode());
+    }
+
+    @ExceptionHandler(UserServiceNotFoundException.class)
+    public ResponseEntity<ApiError> handleUserNotFound(UserServiceNotFoundException exception) {
+        return error(HttpStatus.NOT_FOUND, exception.getMessage(), exception.getErrorCode());
+    }
+
+    @ExceptionHandler(InventoryServiceNotFoundException.class)
+    public ResponseEntity<ApiError> handleInventoryNotFound(InventoryServiceNotFoundException exception) {
+        return error(HttpStatus.NOT_FOUND, exception.getMessage(), exception.getErrorCode());
+    }
+
+    @ExceptionHandler(InventoryInsufficientStockException.class)
+    public ResponseEntity<ApiError> handleInventoryInsufficientStock(InventoryInsufficientStockException exception) {
+        return error(HttpStatus.BAD_REQUEST, exception.getMessage(), exception.getErrorCode());
+    }
+
+    @ExceptionHandler(ProductServiceIntegrationException.class)
+    public ResponseEntity<ApiError> handleProductServiceIntegration(ProductServiceIntegrationException exception) {
+        return error(HttpStatus.BAD_GATEWAY, exception.getMessage(), exception.getErrorCode());
+    }
+
+    @ExceptionHandler(UserServiceIntegrationException.class)
+    public ResponseEntity<ApiError> handleUserServiceIntegration(UserServiceIntegrationException exception) {
+        return error(HttpStatus.BAD_GATEWAY, exception.getMessage(), exception.getErrorCode());
+    }
+
+    @ExceptionHandler(InventoryServiceIntegrationException.class)
+    public ResponseEntity<ApiError> handleInventoryServiceIntegration(InventoryServiceIntegrationException exception) {
+        return error(HttpStatus.BAD_GATEWAY, exception.getMessage(), exception.getErrorCode());
     }
 
     @ExceptionHandler({IllegalArgumentException.class, HttpMessageNotReadableException.class})
