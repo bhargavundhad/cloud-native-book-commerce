@@ -7,5 +7,10 @@ import jakarta.validation.constraints.Positive;
 
 public record ReservationRequest(
         @NotNull(message = "productId is required") UUID productId,
-        @NotNull(message = "quantity is required") @Positive(message = "quantity must be greater than 0") Integer quantity) {
+                @NotNull(message = "quantity is required") @Positive(message = "quantity must be greater than 0") Integer quantity,
+                UUID orderId) {
+
+        public ReservationRequest(UUID productId, Integer quantity) {
+                this(productId, quantity, null);
+        }
 }
