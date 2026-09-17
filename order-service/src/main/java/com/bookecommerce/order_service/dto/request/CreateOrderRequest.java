@@ -10,7 +10,6 @@ public record CreateOrderRequest(
         @NotNull(message = "userId is required")
         UUID userId,
 
-        @NotEmpty(message = "items list cannot be empty")
         @Valid
         List<CreateOrderItemRequest> items,
 

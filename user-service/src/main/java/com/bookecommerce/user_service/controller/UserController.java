@@ -81,7 +81,8 @@ public class UserController {
     // =========================
 
     @GetMapping("/{id}")
-    @PreAuthorize("hasRole('ADMIN')")
+//    @PreAuthorize("hasRole('ADMIN')")
+    @PreAuthorize("hasRole('ADMIN') or #id == authentication.principal")
     public ResponseEntity<ApiResponse<UserResponse>> getUserById(
             @PathVariable UUID id
     ) {
