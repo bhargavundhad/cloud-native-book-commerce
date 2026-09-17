@@ -184,6 +184,26 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
     }
 
+    @ExceptionHandler(PaymentFailedException.class)
+    public ResponseEntity<Map<String, Object>> handlePaymentFailed(PaymentFailedException ex) {
+        Map<String, Object> body = Map.of(
+                "success", false,
+                "message", ex.getMessage(),
+                "errorCode", "PAYMENT_FAILED"
+        );
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(body);
+    }
+
+    @ExceptionHandler(PaymentServiceUnavailableException.class)
+    public ResponseEntity<Map<String, Object>> handlePaymentServiceUnavailable(PaymentServiceUnavailableException ex) {
+        Map<String, Object> body = Map.of(
+                "success", false,
+                "message", ex.getMessage(),
+                "errorCode", "PAYMENT_SERVICE_UNAVAILABLE"
+        );
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
     @ExceptionHandler({IllegalArgumentException.class, IllegalStateException.class})
     public ResponseEntity<Map<String, Object>> handleBadRequest(RuntimeException ex) {
         Map<String, Object> body = Map.of(

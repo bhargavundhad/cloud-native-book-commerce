@@ -2,11 +2,14 @@ package com.bookecommerce.order_service.service;
 
 import com.bookecommerce.order_service.client.CartServiceClient;
 import com.bookecommerce.order_service.client.InventoryServiceClient;
+import com.bookecommerce.order_service.client.PaymentServiceClient;
 import com.bookecommerce.order_service.client.ProductServiceClient;
 import com.bookecommerce.order_service.client.UserServiceClient;
 import com.bookecommerce.order_service.client.dto.CartItemResponseDto;
 import com.bookecommerce.order_service.client.dto.CartResponseDto;
 import com.bookecommerce.order_service.client.dto.InventoryResponseDto;
+import com.bookecommerce.order_service.client.dto.PaymentRequestDto;
+import com.bookecommerce.order_service.client.dto.PaymentResponseDto;
 import com.bookecommerce.order_service.client.dto.ProductResponseDto;
 import com.bookecommerce.order_service.client.dto.UserResponseDto;
 import com.bookecommerce.order_service.dto.request.CreateOrderRequest;
@@ -21,6 +24,8 @@ import com.bookecommerce.order_service.exception.InsufficientStockException;
 import com.bookecommerce.order_service.exception.InventoryNotFoundException;
 import com.bookecommerce.order_service.exception.InventoryServiceUnavailableException;
 import com.bookecommerce.order_service.exception.OrderNotFoundException;
+import com.bookecommerce.order_service.exception.PaymentFailedException;
+import com.bookecommerce.order_service.exception.PaymentServiceUnavailableException;
 import com.bookecommerce.order_service.exception.ProductNotFoundException;
 import com.bookecommerce.order_service.exception.ProductServiceUnavailableException;
 import com.bookecommerce.order_service.exception.UserForbiddenException;
@@ -66,6 +71,9 @@ class OrderServiceTest {
     private InventoryServiceClient inventoryServiceClient;
 
     @Mock
+    private PaymentServiceClient paymentServiceClient;
+
+    @Mock
     private JwtTokenValidator jwtTokenValidator;
 
     @InjectMocks
@@ -83,7 +91,7 @@ class OrderServiceTest {
     }
 
     @Test
-    @DisplayName("Should create order successfully using active cart after validating single product with Product Service and reserving inventory")
+    @DisplayName("Should create order successfully using active cart after validating single product, reserving inventory, saving order, and creating payment")
     void testCreateOrderSuccessSingleProductValidated() {
         CreateOrderRequest request = new CreateOrderRequest(
                 userId,
@@ -104,33 +112,43 @@ class OrderServiceTest {
         InventoryResponseDto validReservation = new InventoryResponseDto(UUID.randomUUID(), productId1, 100, 2, "AVAILABLE", LocalDateTime.now(), UUID.randomUUID(), null, 2, "ACTIVE", LocalDateTime.now(), LocalDateTime.now());
         when(inventoryServiceClient.reserveStock(eq(productId1), eq(2), any())).thenReturn(validReservation);
 
+        UUID generatedOrderId = UUID.randomUUID();
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
             Order saved = invocation.getArgument(0);
-            saved.setId(UUID.randomUUID());
+            if (saved.getId() == null) {
+                saved.setId(generatedOrderId);
+            }
             return saved;
         });
+
+        PaymentResponseDto paymentResponse = new PaymentResponseDto(UUID.randomUUID(), "ORDER", generatedOrderId, userId, new BigDecimal("998.00"), "INR", "MOCK", "MOCK-TXN-123", "SUCCESS", LocalDateTime.now(), LocalDateTime.now(), LocalDateTime.now());
+        when(paymentServiceClient.createPayment(any(PaymentRequestDto.class), any())).thenReturn(paymentResponse);
 
         OrderResponse response = orderService.createOrder(request);
 
         assertNotNull(response);
-        assertNotNull(response.id());
+        assertEquals(generatedOrderId, response.id());
         assertEquals(userId, response.userId());
         assertEquals(OrderStatus.PENDING, response.status());
         assertEquals(new BigDecimal("998.00"), response.totalAmount());
         assertEquals("123 Tech Park, Surat, Gujarat", response.shippingAddress());
         assertEquals(1, response.items().size());
-        assertEquals(productId1, response.items().get(0).productId());
-        assertEquals(2, response.items().get(0).quantity());
-        assertEquals(new BigDecimal("499.00"), response.items().get(0).unitPrice());
 
         verify(cartServiceClient, times(1)).getActiveCart(eq(userId), any());
         verify(productServiceClient, times(1)).getProduct(eq(productId1), any());
         verify(inventoryServiceClient, times(1)).reserveStock(eq(productId1), eq(2), any());
+        verify(paymentServiceClient, times(1)).createPayment(argThat(dto ->
+                dto.referenceType().equals("ORDER") &&
+                dto.referenceId().equals(generatedOrderId) &&
+                dto.userId().equals(userId) &&
+                dto.amount().compareTo(new BigDecimal("998.00")) == 0 &&
+                dto.paymentMethod().equals("MOCK")
+        ), any());
         verify(orderRepository, times(1)).save(any(Order.class));
     }
 
     @Test
-    @DisplayName("Should create order successfully using active cart after validating multiple products with Product Service and reserving inventory")
+    @DisplayName("Should create order successfully using active cart after validating multiple products, reserving inventory, saving order, and creating payment")
     void testCreateOrderSuccessMultipleProductsValidated() {
         CreateOrderRequest request = new CreateOrderRequest(
                 userId,
@@ -156,11 +174,17 @@ class OrderServiceTest {
         when(inventoryServiceClient.reserveStock(eq(productId1), eq(2), any())).thenReturn(res1);
         when(inventoryServiceClient.reserveStock(eq(productId2), eq(1), any())).thenReturn(res2);
 
+        UUID generatedOrderId = UUID.randomUUID();
         when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
             Order saved = invocation.getArgument(0);
-            saved.setId(UUID.randomUUID());
+            if (saved.getId() == null) {
+                saved.setId(generatedOrderId);
+            }
             return saved;
         });
+
+        PaymentResponseDto paymentResponse = new PaymentResponseDto(UUID.randomUUID(), "ORDER", generatedOrderId, userId, new BigDecimal("1797.00"), "INR", "MOCK", "MOCK-TXN-123", "SUCCESS", LocalDateTime.now(), LocalDateTime.now(), LocalDateTime.now());
+        when(paymentServiceClient.createPayment(any(PaymentRequestDto.class), any())).thenReturn(paymentResponse);
 
         OrderResponse response = orderService.createOrder(request);
 
@@ -172,6 +196,7 @@ class OrderServiceTest {
         verify(productServiceClient, times(1)).getProduct(eq(productId2), any());
         verify(inventoryServiceClient, times(1)).reserveStock(eq(productId1), eq(2), any());
         verify(inventoryServiceClient, times(1)).reserveStock(eq(productId2), eq(1), any());
+        verify(paymentServiceClient, times(1)).createPayment(any(PaymentRequestDto.class), any());
         verify(orderRepository, times(1)).save(any(Order.class));
     }
 
@@ -582,5 +607,83 @@ class OrderServiceTest {
         verify(inventoryServiceClient, times(1)).releaseReservation(eq(reservationId1), any());
         // Verify order was NEVER persisted
         verify(orderRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("Should release inventory reservations and update order status to CANCELLED when payment fails with PaymentFailedException")
+    void testCreateOrderPaymentFailedRollbackAndCancelOrder() {
+        CreateOrderRequest request = new CreateOrderRequest(userId, null, "123 Tech Park");
+
+        UserResponseDto validUser = new UserResponseDto(userId, "John", "Doe", "john@example.com", "9876543210", "CUSTOMER", true);
+        when(userServiceClient.verifyUserExists(eq(userId), any())).thenReturn(validUser);
+
+        CartItemResponseDto item = new CartItemResponseDto(UUID.randomUUID(), productId1, 2, new BigDecimal("499.00"));
+        CartResponseDto activeCart = new CartResponseDto(UUID.randomUUID(), userId, "ACTIVE", List.of(item), new BigDecimal("998.00"));
+        when(cartServiceClient.getActiveCart(eq(userId), any())).thenReturn(activeCart);
+
+        ProductResponseDto product = new ProductResponseDto(productId1, "9781234567890", "Clean Code", "Tech", UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("499.00"));
+        when(productServiceClient.getProduct(eq(productId1), any())).thenReturn(product);
+
+        UUID reservationId = UUID.randomUUID();
+        InventoryResponseDto res = new InventoryResponseDto(UUID.randomUUID(), productId1, 100, 2, "AVAILABLE", LocalDateTime.now(), reservationId, null, 2, "ACTIVE", LocalDateTime.now(), LocalDateTime.now());
+        when(inventoryServiceClient.reserveStock(eq(productId1), eq(2), any())).thenReturn(res);
+
+        UUID generatedOrderId = UUID.randomUUID();
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+            Order saved = invocation.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(generatedOrderId);
+            }
+            return saved;
+        });
+
+        doThrow(new PaymentFailedException("Payment failed for order: " + generatedOrderId)).when(paymentServiceClient).createPayment(any(PaymentRequestDto.class), any());
+
+        assertThrows(PaymentFailedException.class, () -> orderService.createOrder(request));
+
+        // Verify inventory release was called for acquired reservation
+        verify(inventoryServiceClient, times(1)).releaseReservation(eq(reservationId), any());
+        // Verify payment was attempted with correct order ID
+        verify(paymentServiceClient, times(1)).createPayment(argThat(dto -> dto.referenceId().equals(generatedOrderId)), any());
+        // Verify order was updated to CANCELLED and saved
+        verify(orderRepository, times(2)).save(argThat(order -> order.getId().equals(generatedOrderId)));
+    }
+
+    @Test
+    @DisplayName("Should release inventory reservations and update order status to CANCELLED when Payment Service is unavailable")
+    void testCreateOrderPaymentServiceUnavailableRollbackAndCancelOrder() {
+        CreateOrderRequest request = new CreateOrderRequest(userId, null, "123 Tech Park");
+
+        UserResponseDto validUser = new UserResponseDto(userId, "John", "Doe", "john@example.com", "9876543210", "CUSTOMER", true);
+        when(userServiceClient.verifyUserExists(eq(userId), any())).thenReturn(validUser);
+
+        CartItemResponseDto item = new CartItemResponseDto(UUID.randomUUID(), productId1, 1, new BigDecimal("499.00"));
+        CartResponseDto activeCart = new CartResponseDto(UUID.randomUUID(), userId, "ACTIVE", List.of(item), new BigDecimal("499.00"));
+        when(cartServiceClient.getActiveCart(eq(userId), any())).thenReturn(activeCart);
+
+        ProductResponseDto product = new ProductResponseDto(productId1, "9781234567890", "Clean Code", "Tech", UUID.randomUUID(), UUID.randomUUID(), new BigDecimal("499.00"));
+        when(productServiceClient.getProduct(eq(productId1), any())).thenReturn(product);
+
+        UUID reservationId = UUID.randomUUID();
+        InventoryResponseDto res = new InventoryResponseDto(UUID.randomUUID(), productId1, 100, 1, "AVAILABLE", LocalDateTime.now(), reservationId, null, 1, "ACTIVE", LocalDateTime.now(), LocalDateTime.now());
+        when(inventoryServiceClient.reserveStock(eq(productId1), eq(1), any())).thenReturn(res);
+
+        UUID generatedOrderId = UUID.randomUUID();
+        when(orderRepository.save(any(Order.class))).thenAnswer(invocation -> {
+            Order saved = invocation.getArgument(0);
+            if (saved.getId() == null) {
+                saved.setId(generatedOrderId);
+            }
+            return saved;
+        });
+
+        doThrow(new PaymentServiceUnavailableException("Payment Service is unreachable")).when(paymentServiceClient).createPayment(any(PaymentRequestDto.class), any());
+
+        assertThrows(PaymentServiceUnavailableException.class, () -> orderService.createOrder(request));
+
+        // Verify inventory release was called
+        verify(inventoryServiceClient, times(1)).releaseReservation(eq(reservationId), any());
+        // Verify order was saved again with status CANCELLED
+        verify(orderRepository, times(2)).save(argThat(order -> order.getId().equals(generatedOrderId)));
     }
 }

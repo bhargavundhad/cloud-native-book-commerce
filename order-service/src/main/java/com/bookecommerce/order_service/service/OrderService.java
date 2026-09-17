@@ -2,11 +2,13 @@ package com.bookecommerce.order_service.service;
 
 import com.bookecommerce.order_service.client.CartServiceClient;
 import com.bookecommerce.order_service.client.InventoryServiceClient;
+import com.bookecommerce.order_service.client.PaymentServiceClient;
 import com.bookecommerce.order_service.client.ProductServiceClient;
 import com.bookecommerce.order_service.client.UserServiceClient;
 import com.bookecommerce.order_service.client.dto.CartItemResponseDto;
 import com.bookecommerce.order_service.client.dto.CartResponseDto;
 import com.bookecommerce.order_service.client.dto.InventoryResponseDto;
+import com.bookecommerce.order_service.client.dto.PaymentRequestDto;
 import com.bookecommerce.order_service.dto.request.CreateOrderItemRequest;
 import com.bookecommerce.order_service.dto.request.CreateOrderRequest;
 import com.bookecommerce.order_service.dto.response.OrderItemResponse;
@@ -44,6 +46,7 @@ public class OrderService {
     private final CartServiceClient cartServiceClient;
     private final ProductServiceClient productServiceClient;
     private final InventoryServiceClient inventoryServiceClient;
+    private final PaymentServiceClient paymentServiceClient;
     private final JwtTokenValidator jwtTokenValidator;
 
     public OrderService(OrderRepository orderRepository,
@@ -51,12 +54,14 @@ public class OrderService {
                         CartServiceClient cartServiceClient,
                         ProductServiceClient productServiceClient,
                         InventoryServiceClient inventoryServiceClient,
+                        PaymentServiceClient paymentServiceClient,
                         JwtTokenValidator jwtTokenValidator) {
         this.orderRepository = orderRepository;
         this.userServiceClient = userServiceClient;
         this.cartServiceClient = cartServiceClient;
         this.productServiceClient = productServiceClient;
         this.inventoryServiceClient = inventoryServiceClient;
+        this.paymentServiceClient = paymentServiceClient;
         this.jwtTokenValidator = jwtTokenValidator;
     }
 
@@ -150,6 +155,32 @@ public class OrderService {
         }
 
         Order savedOrder = orderRepository.save(order);
+
+        // Process Payment with Payment Service synchronously
+        PaymentRequestDto paymentRequest = new PaymentRequestDto(
+                "ORDER",
+                savedOrder.getId(),
+                savedOrder.getUserId(),
+                savedOrder.getTotalAmount(),
+                savedOrder.getCurrency(),
+                "MOCK"
+        );
+
+        try {
+            paymentServiceClient.createPayment(paymentRequest, authHeader);
+        } catch (RuntimeException paymentEx) {
+            for (UUID reservationId : acquiredReservationIds) {
+                try {
+                    inventoryServiceClient.releaseReservation(reservationId, authHeader);
+                } catch (Exception releaseEx) {
+                    System.err.println("Failed to release reservation " + reservationId + ": " + releaseEx.getMessage());
+                }
+            }
+            savedOrder.setStatus(OrderStatus.CANCELLED);
+            orderRepository.save(savedOrder);
+            throw paymentEx;
+        }
+
         return mapToOrderResponse(savedOrder);
     }
 
